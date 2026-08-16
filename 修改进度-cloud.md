@@ -125,6 +125,8 @@ softmax 倒数深度       43 → 21；softmax-path BTS 阶段 3 → 1；389.38 
 
 **追加。** `evaluation set`：RTE 277 / SST-2 872 / QNLI 5463（完整 GLUE dev 集）。Table IV 每个数值除以对应规模均得整数正确数。
 
+**冻结数字的计数口径更新。** 使用带边界正则 `(?<![0-9.])N(?![0-9.])`。R2/R3 的裸 `grep` 已失效：546 会匹配 5463、0.71 会匹配 90.71、43 会匹配 92.43。因此基线自 R4 重设，与前几轮不可比；另对 12 个核心数字做位置核对（`\label` + 上下文），不只统计总量。
+
 ---
 
 ## 4　已锁定判定（`.helicon/decisions.md` 同步）
@@ -132,8 +134,13 @@ softmax 倒数深度       43 → 21；softmax-path BTS 阶段 3 → 1；389.38 
 - **D-1**　Table V 的 `17→3` 是**算子级黑盒口径**：只记入口与出口层级，**不表示内部只消耗 14 层**。不得据此做深度装载论证
 - **D-2**　非 L2 倒数深度 = 16，L2 = 21，exp = 4，THOR-style = 43。**「43 > 16 装不下」永久禁用**（量纲不一致）
 - **D-3**　softmax 闭合论证的基座是：倒数深度 43→21 ⟹ softmax-path BTS 阶段 3→1 ⟹ 389.38→151.59 s。三段量纲一致、逐段实测。R3 / R6 继承
-- **D-4**　"只需刷新分母"这条 observation 归功 `softmax24`（Cho 等，THOR 所基于的工作），**不作为 THEMIS 贡献**。R6 可展开三点：分母数据量远小于分子；分子为主线程、分母为辅助线程；多行分母可批量同时自举
-- **D-5**　`homomorphic-free`、`homomorphic evaluation-free`、`FHE-free` 及任何自创的 `X-free` 复合词全部禁用。唯一允许的标签是 `key-switch-free PCMM`，且不得外推为其他 `X-free` 表述
+- **D-4**　"只需刷新分母"这条 observation 归功 `softmax24`（Cho 等，THOR 所基于的工作），**不作为 THEMIS 贡献**；交错多批次打包可作为实现布局描述，但不再作为贡献主张
+- **D-5**　`homomorphic-free`、`homomorphic evaluation-free`、`FHE-free`、`key-switch-free` 及任何自创的 `X-free` 复合词全部永久禁用
+- **D-6**　全文统一术语 `coefficient-domain execution`，与实现中的 `EvalCoeffDomainLinearPCMM` 一致
+- **D-7**　PCMM 的核心主张是“从系数层进入使同一批算术成为稠密 GEMM”。这一观察归功 BLAS 线；THEMIS 的增量是在槽编码 $L \ll N$ 区间使其成立
+- **D-8**　C2PMM 相消**必须有证明**：正文简版（≤12 行，含两个恒等式），附录完整版（60–80 行）。9A 的槽侧直觉不足以推出 THEMIS 所需的系数侧 $2N\times2N$ 提升矩阵相消；共轭分支归零不是 FFT/IFFT 互补的直接推论。**这推翻 R2 的全删**
+- **D-9**　贡献层级（H-POSITION 锁定）：顶层 level-budget co-design；A1 `coefficient-domain execution`；A2 ColPair/DiagPair（非同一 trick）；A3 denominator-conditioned softmax；S 端到端系统
+- **D-10**　已废除的主张：`key-switch-free`、交错打包、相消性质本身、complex-number trick、只刷新分母的 observation
 
 ### 禁用表述
 
@@ -151,7 +158,12 @@ building on / following / based on the algorithm of（作为 §IV-A 段落主干
 throughput advantage / keep the backend busy / leading dimension close to N（已被 E3 否定）
 nohalf（已清零）
 homomorphic-free / homomorphic evaluation-free / FHE-free 及任何自创的 X-free 复合词
-  → 唯一允许的标签是 key-switch-free PCMM
+key-switch-free（永久废弃）
+  → V11/V14 已证 Euston / MOAI / NEXUS 的在线 PCMM 同样零 key-switch，且明密文乘法本来就不需要 key switching；这不是 THEMIS 的性质
+Kernel speedup（作为表列名）
+  → 用 Dense GEMM backend（事实而非结果）
+novel / significant / substantially / for the first time / unprecedented
+任何暴露审稿过程的措辞（双盲投稿）
 no CKKS operation / no homomorphic operation（绝对表述）
 节标题与小节标题中的冒号；"Co-design I/II" 式标题
   → 总分关系放在开篇句里，不放在标题里
@@ -178,6 +190,10 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | **页数** | 当前阶段不压页。内容定稿后才处理 13 页限制 |
 | **rescale** | PCMM 每次一次，用于 scale 与噪声管理。**必须在正文主动写出**，因为 Table V 的 3→2 摆在那里。写了账就清楚，不写会被追问 |
 | **E8 运行次数** | 不写。跑一轮几十小时，同领域也不写。改为写明**完整 dev 集规模**（277/872/5463），这比运行次数更有说服力，且顺带解释了 400.06×5463 的算式 |
+| **PCMM 数字来源** | 一律从 `PCMM_benchmark.cpp` 实测，五个对比方案全部有复现。论文抠出的数字只用于交叉核对，冲突以代码为准 |
+| **层级消耗** | 必须逐方案实测。Euston 可能是 2、Powerformer 可能不是 1；不要假设全为 1 |
+| **Fig 4** | 保留四 panel，micro-benchmark 的速度对比有必要 |
+| **CCMM 切法** | 结论 + observation + 思路详解 + **算法**留正文；只有逐步代数推导进附录 |
 
 ---
 
@@ -191,23 +207,21 @@ no CKKS operation / no homomorphic operation（绝对表述）
 2. **THEMIS 的答案**：矩阵乘本身从不以同态方式求值
 3. **算法出处（一句）**：该归约的算法起点见于 Liu–Zhang（在其可验证外包方案中作为部件），由 PCMM24 / BLAS25 发展为 FHE 的 PC-MM 形式，后者在 $d \ge N$ 下建立槽编码兼容性
 4. **THEMIS 的算法增量**：槽编码 + $L \ll N$ 区间的实例化；不需要 PCMM24 在 $d<N$ 时所需的 MLWE ModDecomp/ModPack 路径
-5. **THEMIS 的系统增量**：交错多批次打包同时服务 PCMM 与两个下游 CCMM，算子边界零格式转换
+5. **THEMIS 的系统增量**：将该 execution 置入端到端加密 Transformer pipeline，并与下游 CCMM 衔接；交错打包不再作为贡献主张
 
 **不写"独立得到"脚注。** 那是防御姿态，会把读者注意力引向相似性。
 
-### 6.2 key-switch-free PCMM 的正确形态
+### 6.2 coefficient-domain execution 的正确形态
 
-**不造词。**不要用 `homomorphic-free`、`homomorphic evaluation-free`、`FHE-free` 或任何自创的 `X-free` 复合词。唯一允许的标签是 `key-switch-free PCMM`。
+**术语冻结。** 全文统一使用 `coefficient-domain execution`，与实现中的 `EvalCoeffDomainLinearPCMM` 一致。`homomorphic-free`、`homomorphic evaluation-free`、`FHE-free`、`key-switch-free` 及任何自创的 `X-free` 复合词均永久禁用。
 
-**正文写一句精确陈述**：矩阵乘本身从不以同态方式求值，它是对密文自身两个系数矩阵做的明文整数线性代数；路径上唯一的密文侧操作是每次 PCMM 一次 rescale，而 rescale 是对同一批系数矩阵的逐系数整数运算，用于 scale 与噪声管理，不参与矩阵乘。
+**核心主张。** PCMM 从系数层进入，使同一批算术成为稠密 GEMM；这一观察归功 BLAS 线。THEMIS 的增量是在槽编码 $L \ll N$ 区间使其成立，而不是宣称某种 key-switch 性质。
 
-**主动把 rescale 说出来。** Table V 第一行是 `Q,K PCMM 3→2`，级别掉了一层。不说，读者会问"这一层怎么掉的"；说了，账就清楚。
+**正文写一句精确陈述**：PCMM 通过 `coefficient-domain execution` 对密文相关的系数矩阵执行稠密整数线性代数；路径上每次 PCMM 有一次 rescale。rescale 是同一批系数矩阵的逐系数整数运算，用于 scale 与噪声管理，不参与矩阵乘。
 
-**然后用 V11 的四类在线计数让数字说话**（rotation / key-switch / pt-ct / ct-add）。V11 与 E6 读取同一批外部文献，必须批量化。
+**主动把 rescale 说出来。** Table V 第一行是 `Q,K PCMM 3→2`，级别掉了一层。不说，读者会问“这一层怎么掉的”；说了，账就清楚。
 
-**为什么必须用计数而不是绝对表述**：MOAI 与 Euston 的在线 PCMM 可能同样 `key-switch-free`。若如此，区分度移到 $O(d_{in})$ 对 $O(1)$ 这一列；不能预设 rotation / key-switch 的比较结果。
-
-要标签的话只用 `key-switch-free PCMM`，可数、可核。
+**用 V14 的代码实测让数字说话。** 六方案统一统计 CT add / PT×CT / rotation / 层级消耗 / 是否调 Dense GEMM backend；不要把 `Kernel speedup` 当成表列名，也不从论文抠数代替实测。
 
 ---
 
@@ -245,7 +259,9 @@ no CKKS operation / no homomorphic operation（绝对表述）
 |---|---|---|---|
 | **E6** | 跨系统 end-task accuracy：各系统各自的 plaintext baseline 与 Δ（MOAI / THOR / Euston） | P，零机时 | **必做**。不能只比加密后的绝对值；不同系统微调起点不同。9B #4 点名 |
 | **E8** | 完整 dev 集规模说明（RTE 277 / SST-2 872 / QNLI 5463） | P，零机时 | **不做**。accuracy 小节写明完整 dev 集规模；不写运行次数（单轮几十小时，同领域也不写） |
-| **V11** | 五系统在线 PCMM 的 rotation / key-switch / pt-ct / ct-add 计数 | P，零机时（与 E6 同批文献） | **必做**。MOAI 与 Euston 可能同样 key-switch-free；届时区分度移到 $O(d_{in})$ 对 $O(1)$ 一列 |
+| **V11** | 五系统在线 PCMM 的 rotation / key-switch / pt-ct / ct-add 计数 | P，零机时（与 E6 同批文献） | **必做**。只报告可核的计数，不把零 key-switch 当作 THEMIS 性质 |
+| **V14** | PCMM 六方案五项代码实测（CT add / PT×CT / rotation / 层级消耗 / 是否调 Dense GEMM backend） | P，零机时 | **必做**。取代 R3 从论文抠数的做法 |
+| **V15** | 五篇论文入 `论文MD/` + Powerformer `model-modified` 核实 | P，零机时 | **必做**。先查已有 MD 和 manifest，已有不重转 |
 | **E5** | 标定成本（样本数、耗时、是否明文、微调后是否重做） | **P，零机时**（原列 M） | **做**。9B #2 点名。不是新实验，是把现有标定脚本跑一次记时 |
 | E13 | $\alpha(D_t)$ 经验范围验证 | P | **待查**。只在附录确实有未支撑的经验断言时做 |
 | E4 | softmax 消融 | M | **不做**。Table III 已是五维两点对比，占机器换边际收益 |
@@ -265,12 +281,12 @@ no CKKS operation / no homomorphic operation（绝对表述）
 
 | # | 意见 | 动作 | 状态 |
 |---|---|---|---|
-| 1 | novelty 不清楚 | 主线换成 level-budget 架构；精确划分继承与新增 | R3 进行中 |
+| 1 | novelty 不清楚 | 主线换成 level-budget 架构；精确划分继承与新增 | R4 |
 | 2 | PCMM/CCMM prior work 讨论不足 | 补 13 篇 + Liu–Zhang 归功 + Related Work 谱系段 | ✅ R1–R2 |
-| 3 | slot-encode C2PMM 论证过长，cancellation 可直接解释 | 删定理体系（正文 93 行 + 附录 194 行），改三句 + 脚注 | ✅ R2 |
-| 4 | bootstrapping 当黑盒 | 讨论 MaMBo / shared-a，说明未采纳理由（预计算密钥膨胀、backward format conversion 的循环安全假设） | 待做，R7 |
+| 3 | slot-encode C2PMM 论证过长，cancellation 可直接解释 | 恢复分层证明：正文≤12行（两个恒等式）+ 附录60–80行 | R4（D-8 推翻 R2 全删） |
+| 4 | bootstrapping 当黑盒 | 讨论 MaMBo / shared-a，说明未采纳理由（预计算密钥膨胀、backward format conversion 的循环安全假设） | 待做，R8 |
 | 5 | artifact 只有 README | 上传可运行代码 | ✅ 已上传 |
-| 6 | speedup 来源不清楚，缺逐组件 ablation | E1 非单调消融 + E2 代价常数 | 待做，R5 |
+| 6 | speedup 来源不清楚，缺逐组件 ablation | E1 非单调消融 + E2 代价常数 | 待做，R6 |
 
 **9A 明确认可的三点，改稿中不要削弱**：性能数字较强 · final-only high-precision reciprocal 的 softmax 设计有意思 · 已有 microbenchmark 与 end-to-end evaluation。
 
@@ -278,10 +294,10 @@ no CKKS operation / no homomorphic operation（绝对表述）
 
 | # | 意见 | 动作 | 状态 |
 |---|---|---|---|
-| 1 | 只评估单一配置 | E3 就是配置扫描，成本模型可预测；BERT-large / decoder-only 写入 Limitations | 部分，R5 |
+| 1 | 只评估单一配置 | E3 就是配置扫描，成本模型可预测；BERT-large / decoder-only 写入 Limitations | 部分，R6 |
 | 2 | calibration 的数据需求、时间、稳定性不清楚 | E5（P 类）+ 正文 3 句 + 附录 | 待做，R6 |
-| 3 | accuracy 运行次数不清楚 | 写明完整 dev 集规模（277 / 872 / 5463），不写运行次数 | R3 |
-| 4 | 缺与 prior systems 的 end-task accuracy 对比 | E6 | 待做，R5 |
+| 3 | accuracy 运行次数不清楚 | 写明完整 dev 集规模（277 / 872 / 5463），不写运行次数 | R4 |
+| 4 | 缺与 prior systems 的 end-task accuracy 对比 | E6 | 待做，R6 |
 
 ---
 
@@ -290,14 +306,15 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | 轮 | 内容 | 状态 |
 |---|---|---|
 | **R1** | 口径裁决写入 + 归功与文献修复 + 安全参数核实 + 图件 | ✅ 完成（E11 图件被门禁阻塞） |
-| **R2** | 删定理体系 + PCMM 按 E3 真实结论改写 + 两类 BTS 口径分开 + 死引用安置 | ✅ 完成（T7 停做、T9 失败） |
-| **R3** | **§III 改名 Level-Budget Architecture + 两轴刻画（矩阵 6 层浅而密 / 非线性 38 层深而疏）+ 放置规则 + F1-a/F1-b + E10 + PCMM key-switch 表 + key-switch-free 改写 + 安全参数 A 档 + dev 集规模 + E6 + Fig 1/Fig 3 overlay** | 定稿 |
-| R4 | Contributions 重排 + Introduction 改为 origin story + 标题写入 | 待 R3 |
-| R5 | Evaluation：E1 非单调消融 + E2 代价常数 + E6 + V11 | 待 R3 |
-| R6 | Softmax 章节：D-3 闭合链 + E5 + D-4 的 observation | 待 R3 |
-| R7 | Discussion & Limitations + bootstrapping 讨论（9A #4）+ Open Science | 待全部 |
-| R8 | **Abstract（最后写）** | 待全部 |
-| R9 | 压页至 13 页 + 数字对账 + 匿名化 + 灰度检查 | 待全部 |
+| **R2** | 删定理体系 + PCMM 按 E3 真实结论改写 + 两类 BTS 口径分开 + 死引用安置 | ✅ 完成（C2PMM 证明的全删由 D-8 推翻，R4 分层恢复；T7 停做、T9 失败） |
+| **R3** | **§III 改名 Level-Budget Architecture + 两轴刻画（矩阵 6 层浅而密 / 非线性 38 层深而疏）+ 放置规则 + F1-a/F1-b + E10 + PCMM 表框架 + coefficient-domain execution 改写 + 安全参数 A 档 + dev 集规模 + E6 + Fig 1/Fig 3 overlay** | 定稿 |
+| **R4** | **PCMM 表实测化 + coefficient-domain execution 主张 + C2PMM 证明分层恢复 + CCMM 重组瘦身（§IV 6→3 页）+ F1 合 subfigure + accuracy 表加 Original model 列 + H-POSITION 锁贡献层级 + pdf2md 基建** | 待执行 |
+| **R5** | Contributions 重排 + Introduction origin story + 标题写入 | 待 R4 |
+| **R6** | Evaluation（E1 非单调消融 + E2 代价常数） | 待 R5 |
+| **R7** | Softmax 章节 | 待 R6 |
+| **R8** | Discussion & Limitations + bootstrapping 回应（9A #4）+ Open Science | 待 R7 |
+| **R9** | Abstract | 待 R8 |
+| **R10** | 压页至 13 页 + 数字对账 + 匿名化 + 灰度检查 | 待 R9 |
 
 ### R3 章节骨架
 
@@ -399,19 +416,20 @@ Iron Rule 1 原文写着 "outside an explicit **P1 request**"；`pass_pipeline.m
 
 | 图 | 文件 | 状态 |
 |---|---|---|
-| Fig 1 | `Figure/themis_architecture.pdf` | 图内有 `FNN` 应为 `FFN`。**原始工程文件已确认丢失**；首选 TikZ overlay，重画 TikZ 仅为退路 |
+| Fig 1 | `Figure/themis_architecture.pdf` | `FNN`→`FFN` 的 TikZ overlay 已完成；像素差分零外溢。原 PDF text layer 的旧字不作为验收依据 |
 | Fig 2 | `Figure/pcmm2ppmm_embedded.pdf` | 正常 |
-| Fig 3 | `Figure/CCMM.pdf` | 图内 $p_{33}$ 应为 $s_{33}$。**原始工程文件丢失，PDF 文字层不可编辑**（本机无 qpdf / mutool）；首选 TikZ overlay，重画 TikZ 仅为退路 |
-| Fig 4 | `Figure/themis_four_panel_summary.pdf` | 四 panel，后期可压二 panel。**样式基准图** |
+| Fig 3 | `Figure/CCMM.pdf` | $p_{33}$→$s_{33}$ 的 TikZ overlay 已完成；像素差分零外溢。原 PDF text layer 的旧字不作为验收依据 |
+| Fig 4 | `Figure/themis_four_panel_summary.pdf` | 保留四 panel；micro-benchmark 的速度对比有必要。**样式基准图** |
 | Fig 5 | `Figure/offset_d0_range_reduction_by_layer.pdf` | 二 panel，后期可压一 panel |
-| F1-a | 待入正文 | RNS 层级绝对代价，对数轴。**已生成，需返工**：左端标注位置错（画在 x=2 但那是 L1 的值）；Rot 与 RELIN 曲线几乎重合 |
-| F1-b | 待入正文 | 每 limb 归一化代价，参考线 y=1.0。**已生成，需返工**：同样的 Rot/RELIN 重合问题；低层 0.67 的凹陷是伪影却最抢眼，caption 需交代 |
+| F1-a / F1-b | 待入正文 | 合并为 §III-C 的一个双栏 figure 的两个 subfigure |
 
 **注意**：`.tex` 中 `FNN` 计数已为 0，FFN 问题**只存在于图内文字**。
 
-### Fig 1 与 Fig 3 修法
+### Fig 1 与 Fig 3 overlay 验收
 
-Fig 1 / Fig 3 的修法改为 **TikZ overlay**：在 `\includegraphics` 之上叠白色矩形盖掉错字，再放正确文字。原图其余部分逐像素不变，风格自动一致。重画 TikZ 是退路，不是首选。
+Fig 1 / Fig 3 的 **TikZ overlay 已完成**：在 `\includegraphics` 之上叠白色矩形盖掉错字，再放正确文字；像素差分零外溢，原图其余部分逐像素不变。原 PDF 的 text layer 仍含旧字，验收依据是最终编译页面。
+
+F1-a / F1-b 合并为一个双栏 figure 的两个 subfigure，整体放 §III-C。
 
 ---
 
@@ -453,7 +471,7 @@ Fig 1 / Fig 3 的修法改为 **TikZ overlay**：在 `\includegraphics` 之上�
 
 ## 14　一句话状态
 
-标题、作者、topic 已锁定；R1（口径与归功）、R2（删定理体系 + PCMM 真实机制 + BTS 口径）已完成，正文 15 页；**R3 是最关键的一轮——把三点平铺改成"总分"结构，用「矩阵浅而密、非线性深而疏」两轴把 Level-Budget Architecture 立为统领**；E4/E8/E11 判定为不做，E5 降为零机时，E6/V11 必做；只允许 `key-switch-free PCMM`，禁用其他 `X-free` 造词；安全参数按 A 档只报基本配置。
+标题、作者、topic 已锁定；R1（口径与归功）、R2（PCMM 真实机制 + BTS 口径）已完成，正文 15 页；R4 以 PCMM 表实测化、`coefficient-domain execution` 主张、C2PMM 分层证明恢复和 CCMM 瘦身为核心。E4/E8/E11 判定为不做，E5 降为零机时，E6/V14/V15 必做；`key-switch-free` 与其他 `X-free` 造词均永久禁用；安全参数按 A 档只报基本配置。
 
 ---
 
@@ -466,3 +484,22 @@ Fig 1 / Fig 3 的修法改为 **TikZ overlay**：在 `\includegraphics` 之上�
 3. **定位表**：每个任务给 `\label` + 当前行区间，不让它搜。
 4. **批量化**：读取同一批外部文献的任务合并成一次取回，PDF 保留不删。
 5. **计数口径固定**：沿用同一脚本，上轮的 after 快照直接作为本轮 before。
+
+---
+
+## 16　多智能体与 PDF 处理
+
+### 多智能体拓扑（每轮指令必须给）
+
+- 主 agent 编排 + 汇总，**只有它写回执**。
+- 阶段 1 并行：A（文献转换取数，可再分子 agent）／B（代码统计）。
+- 阶段 2：C（HElicon P1/P2 编辑；不依赖 A/B 的任务可提前开始）。
+- 全程：D（核验；C 每交付一项立刻核一项，不攒到最后）。
+- 写权互斥：只有 C 能写主稿。
+
+### PDF 硬规则（永久）
+
+1. 任何 PDF 读取前必须先过 `pdf2md`，之后只读 MD；原 PDF 只留档。
+2. 统一存 `<论文目录>/论文MD/`，命名为 `<系统名>_<年份>.md`。
+3. 配 manifest：来源 URL / 原 PDF SHA-256 / 转换日期 / 覆盖小节 / 是否完整。
+4. 开工先查目录；已有不重转。
