@@ -141,6 +141,10 @@ softmax 倒数深度       43 → 21；softmax-path BTS 阶段 3 → 1；389.38 
 - **D-8**　C2PMM 相消**必须有证明**：正文简版（≤12 行，含两个恒等式），附录完整版（60–80 行）。9A 的槽侧直觉不足以推出 THEMIS 所需的系数侧 $2N\times2N$ 提升矩阵相消；共轭分支归零不是 FFT/IFFT 互补的直接推论。**这推翻 R2 的全删**
 - **D-9**　贡献层级（H-POSITION 锁定）：顶层 level-budget co-design；A1 `coefficient-domain execution`；A2 ColPair/DiagPair（非同一 trick）；A3 denominator-conditioned softmax；S 端到端系统
 - **D-10**　已废除的主张：`key-switch-free`、交错打包、相消性质本身、complex-number trick、只刷新分母的 observation
+- **D-11**　PCMM 表的锚点是**一次完整 Q 投影**，不是六个投影合计。数字来自 `PCMM_benchmark.cpp` 的循环边界静态展开，不是动态执行。R3-V11 从论文抠的多投影总数（Powerformer 464、THOR 922）**不能与之直接换算**
+- **D-12**　level cost 的统一规则：在线路径上串行的明密文乘法层数。加密时 3 个模数、算完剩 1 个 = 消耗 2 层；2 个模数 = 1 层。五行必须同规则推导，不得出现“作者裁定”的单格
+- **D-13**　不比较 NEXUS 的 accuracy 与密文矩阵乘。理由：第一代工作，性能差两三个数量级，Euston 已与其对比。Introduction 保留引用，Evaluation 开头加一句比较范围说明
+- **D-14**　对比表一律用**每输入**口径为主列，整批数进表注。整批数与单输入数不得并排出现在同一列
 
 ### 禁用表述
 
@@ -194,6 +198,9 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | **层级消耗** | 必须逐方案实测。Euston 可能是 2、Powerformer 可能不是 1；不要假设全为 1 |
 | **Fig 4** | 保留四 panel，micro-benchmark 的速度对比有必要 |
 | **CCMM 切法** | 结论 + observation + 思路详解 + **算法**留正文；只有逐步代数推导进附录 |
+| **Powerformer = model-modified** | §3.1 用 BPMax 替换 Softmax，§3.3 蒸馏重训。accuracy 表标 ✗；中性陈述事实，不写“其结果不作数” |
+| **C2PMM 证明的分层** | 正文 12 行（proposition + 简证 + 两个恒等式），附录 80 行完整推导。R2 的全删已被推翻，不要再删 |
+| **§IV 的页数瓶颈在浮动体不在文字** | 四个跨栏 float + 两个算法。再砍文字无效，必须合并 float |
 
 ---
 
@@ -253,6 +260,22 @@ no CKKS operation / no homomorphic operation（绝对表述）
 
 **PT×CT 在最后两点非单调**（L16 归一 15.899 → L17 12.990），原因经核实**查不出**，已排除 dnum 分组边界与测量伪影两种解释。**不得为它编造机制**，不入图。
 
+### R4 实测结果
+
+**V14**（`PCMM_benchmark.cpp` 静态计数，单 Q 投影，整批）：
+
+| 系统 | b | CT add | PT×CT | Rot | Level | Dense GEMM backend |
+|---|---:|---:|---:|---:|---:|---|
+| Powerformer | 1 | 1,535 | 1,536 | 85 | 1 | — |
+| THOR | 1 | 1,556 | 1,580 | 40 | 2 | — |
+| Euston | 256 | 589,056 | 589,824 | 0 | 2 | — |
+| MOAI | 256 | 589,056 | 589,824 | 0 | 1 | — |
+| THEMIS | 256 | 0 | 0 | 0 | 1 | ✓ |
+
+**已知缺陷（R5 待决）**：Euston 与 MOAI 共用 `RunStreamingCtPtMatrixMul`；文件里定义的 `RunMoaiCtPtMatrixMul` 未被调用；Euston 的 Q 按论文应走 masked IWMM，而非列打包。
+
+**V15**：`论文MD/` 已建库 106 页、五篇；R3-V12 的 accuracy 数字复核零差异。
+
 ### 待办实验（判定）
 
 | ID | 内容 | 类别 | 判定 |
@@ -260,8 +283,8 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | **E6** | 跨系统 end-task accuracy：各系统各自的 plaintext baseline 与 Δ（MOAI / THOR / Euston） | P，零机时 | **必做**。不能只比加密后的绝对值；不同系统微调起点不同。9B #4 点名 |
 | **E8** | 完整 dev 集规模说明（RTE 277 / SST-2 872 / QNLI 5463） | P，零机时 | **不做**。accuracy 小节写明完整 dev 集规模；不写运行次数（单轮几十小时，同领域也不写） |
 | **V11** | 五系统在线 PCMM 的 rotation / key-switch / pt-ct / ct-add 计数 | P，零机时（与 E6 同批文献） | **必做**。只报告可核的计数，不把零 key-switch 当作 THEMIS 性质 |
-| **V14** | PCMM 六方案五项代码实测（CT add / PT×CT / rotation / 层级消耗 / 是否调 Dense GEMM backend） | P，零机时 | **必做**。取代 R3 从论文抠数的做法 |
-| **V15** | 五篇论文入 `论文MD/` + Powerformer `model-modified` 核实 | P，零机时 | **必做**。先查已有 MD 和 manifest，已有不重转 |
+| **V14** | PCMM 五方案五项代码实测（CT add / PT×CT / rotation / 层级消耗 / 是否调 Dense GEMM backend） | P，零机时 | ✅ **R4 完成**。`PCMM_benchmark.cpp` 静态计数，单 Q 投影、整批；R5 处理 Euston/MOAI 路径缺陷 |
+| **V15** | 五篇论文入 `论文MD/` + Powerformer `model-modified` 核实 | P，零机时 | ✅ **R4 完成**。106 页；R3-V12 accuracy 数字复核零差异 |
 | **E5** | 标定成本（样本数、耗时、是否明文、微调后是否重做） | **P，零机时**（原列 M） | **做**。9B #2 点名。不是新实验，是把现有标定脚本跑一次记时 |
 | E13 | $\alpha(D_t)$ 经验范围验证 | P | **待查**。只在附录确实有未支撑的经验断言时做 |
 | E4 | softmax 消融 | M | **不做**。Table III 已是五维两点对比，占机器换边际收益 |
@@ -281,10 +304,10 @@ no CKKS operation / no homomorphic operation（绝对表述）
 
 | # | 意见 | 动作 | 状态 |
 |---|---|---|---|
-| 1 | novelty 不清楚 | 主线换成 level-budget 架构；精确划分继承与新增 | R4 |
+| 1 | novelty 不清楚 | 主线换成 level-budget 架构；精确划分继承与新增 | ✅ R4 |
 | 2 | PCMM/CCMM prior work 讨论不足 | 补 13 篇 + Liu–Zhang 归功 + Related Work 谱系段 | ✅ R1–R2 |
-| 3 | slot-encode C2PMM 论证过长，cancellation 可直接解释 | 恢复分层证明：正文≤12行（两个恒等式）+ 附录60–80行 | R4（D-8 推翻 R2 全删） |
-| 4 | bootstrapping 当黑盒 | 讨论 MaMBo / shared-a，说明未采纳理由（预计算密钥膨胀、backward format conversion 的循环安全假设） | 待做，R8 |
+| 3 | slot-encode C2PMM 论证过长，cancellation 可直接解释 | 恢复分层证明：正文≤12行（两个恒等式）+ 附录60–80行 | ✅ R4（D-8 推翻 R2 全删） |
+| 4 | bootstrapping 当黑盒 | 讨论 MaMBo / shared-a，说明未采纳理由（预计算密钥膨胀、backward format conversion 的循环安全假设） | 待做，R7 |
 | 5 | artifact 只有 README | 上传可运行代码 | ✅ 已上传 |
 | 6 | speedup 来源不清楚，缺逐组件 ablation | E1 非单调消融 + E2 代价常数 | 待做，R6 |
 
@@ -295,8 +318,8 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | # | 意见 | 动作 | 状态 |
 |---|---|---|---|
 | 1 | 只评估单一配置 | E3 就是配置扫描，成本模型可预测；BERT-large / decoder-only 写入 Limitations | 部分，R6 |
-| 2 | calibration 的数据需求、时间、稳定性不清楚 | E5（P 类）+ 正文 3 句 + 附录 | 待做，R6 |
-| 3 | accuracy 运行次数不清楚 | 写明完整 dev 集规模（277 / 872 / 5463），不写运行次数 | R4 |
+| 2 | calibration 的数据需求、时间、稳定性不清楚 | E5（P 类）+ 正文 3 句 + 附录 | 待做，R8 |
+| 3 | accuracy 运行次数不清楚 | 写明完整 dev 集规模（277 / 872 / 5463），不写运行次数 | ✅ R4 |
 | 4 | 缺与 prior systems 的 end-task accuracy 对比 | E6 | 待做，R6 |
 
 ---
@@ -308,13 +331,15 @@ no CKKS operation / no homomorphic operation（绝对表述）
 | **R1** | 口径裁决写入 + 归功与文献修复 + 安全参数核实 + 图件 | ✅ 完成（E11 图件被门禁阻塞） |
 | **R2** | 删定理体系 + PCMM 按 E3 真实结论改写 + 两类 BTS 口径分开 + 死引用安置 | ✅ 完成（C2PMM 证明的全删由 D-8 推翻，R4 分层恢复；T7 停做、T9 失败） |
 | **R3** | **§III 改名 Level-Budget Architecture + 两轴刻画（矩阵 6 层浅而密 / 非线性 38 层深而疏）+ 放置规则 + F1-a/F1-b + E10 + PCMM 表框架 + coefficient-domain execution 改写 + 安全参数 A 档 + dev 集规模 + E6 + Fig 1/Fig 3 overlay** | 定稿 |
-| **R4** | **PCMM 表实测化 + coefficient-domain execution 主张 + C2PMM 证明分层恢复 + CCMM 重组瘦身（§IV 6→3 页）+ F1 合 subfigure + accuracy 表加 Original model 列 + H-POSITION 锁贡献层级 + pdf2md 基建** | 待执行 |
-| **R5** | Contributions 重排 + Introduction origin story + 标题写入 | 待 R4 |
-| **R6** | Evaluation（E1 非单调消融 + E2 代价常数） | 待 R5 |
-| **R7** | Softmax 章节 | 待 R6 |
-| **R8** | Discussion & Limitations + bootstrapping 回应（9A #4）+ Open Science | 待 R7 |
+| **R4** | **PCMM 表实测化 + coefficient-domain execution + C2PMM 两层证明 + CCMM 下沉（ss:ccmm −41.9%）+ F1 合图 + accuracy 表 Original model 列 + 论文MD 基建 + H-POSITION** | ✅ 完成 |
+| **R5** | Contributions + Introduction + 标题写入 + §IV 浮动体合并（减页主刀） | 待执行 |
+| **R6** | Evaluation 消融（9A #6，E1 非单调 + E2 代价常数） | 待 R5 |
+| **R7** | bootstrapping 讨论（9A #4，中档）+ Discussion & Limitations | 待 R6 |
+| **R8** | Softmax 章节（D-3 闭合链 + E5 标定成本，9B #2） | 待 R7 |
 | **R9** | Abstract | 待 R8 |
-| **R10** | 压页至 13 页 + 数字对账 + 匿名化 + 灰度检查 | 待 R9 |
+| **R10** | 压页 + 数字对账 + 匿名化 + 灰度检查 | 待 R9 |
+
+时间不够时的牺牲顺序：R8 扩写 → R7 的 Limitations → R5 的 Introduction。**9A #4 与 #6 一条都不能砍。**
 
 ### R3 章节骨架
 
@@ -431,6 +456,10 @@ Fig 1 / Fig 3 的 **TikZ overlay 已完成**：在 `\includegraphics` 之上叠�
 
 F1-a / F1-b 合并为一个双栏 figure 的两个 subfigure，整体放 §III-C。
 
+### 合并图标签
+
+合并图目前挂了三个 label 指向同一 float，`\ref{fig:rns-level-absolute}` 渲染为 “Figure N” 而非 “Figure N(a)”。需改为 subcaption 真子标签，或正文写死 (a)/(b)。
+
 ---
 
 ## 12　用户沟通偏好
@@ -471,7 +500,7 @@ F1-a / F1-b 合并为一个双栏 figure 的两个 subfigure，整体放 §III-C
 
 ## 14　一句话状态
 
-标题、作者、topic 已锁定；R1（口径与归功）、R2（PCMM 真实机制 + BTS 口径）已完成，正文 15 页；R4 以 PCMM 表实测化、`coefficient-domain execution` 主张、C2PMM 分层证明恢复和 CCMM 瘦身为核心。E4/E8/E11 判定为不做，E5 降为零机时，E6/V14/V15 必做；`key-switch-free` 与其他 `X-free` 造词均永久禁用；安全参数按 A 档只报基本配置。
+标题、作者、topic 已锁定；R1（口径与归功）、R2（PCMM 真实机制 + BTS 口径）、R4（PCMM 表实测化、`coefficient-domain execution`、C2PMM 分层证明、CCMM 下沉与论文MD 基建）已完成。R5 的主刀是 §IV 浮动体合并；E4/E8/E11 判定为不做，E5 降为零机时，V14/V15 已完成，E6 必做；`key-switch-free` 与其他 `X-free` 造词均永久禁用；安全参数按 A 档只报基本配置。
 
 ---
 
@@ -503,3 +532,13 @@ F1-a / F1-b 合并为一个双栏 figure 的两个 subfigure，整体放 §III-C
 2. 统一存 `<论文目录>/论文MD/`，命名为 `<系统名>_<年份>.md`。
 3. 配 manifest：来源 URL / 原 PDF SHA-256 / 转换日期 / 覆盖小节 / 是否完整。
 4. 开工先查目录；已有不重转。
+---
+
+## 17　§IV 减页方案
+
+瓶颈是六个浮动体，不是文字。R4 砍了 41.9% 词数但页数零变化。
+
+- **主刀**：`tab:pcmm-online-cost` 与 `tab:ccmm-summary` 合并为一张三段式表（PCMM(Q) / QK^T / S·V，统一列结构），省约 0.4 页。
+- **其余**：`fig:pcmm2ppmm` 三 panel → 两 panel；`fig:col_diag_pair` 跨栏 → 单栏；`ss:pcmm-algo` 的 Eq.4/5/6 下沉附录，只留结论。
+
+全部是合并与移动，不删任何机制解释。
